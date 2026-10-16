@@ -1,0 +1,57 @@
+name: Release
+
+# semantic-release reads the Conventional Commits pushed to main, decides the
+# next version, updates CHANGELOG.md, tags and creates the GitHub release.
+# The binaries are then built and attached by build-binaries.yml, called below
+# (a tag pushed with GITHUB_TOKEN would not trigger it on its own).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    outputs:
+      tag: ${{ steps.release.outputs.tag }} # empty when no release was needed
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # push the release commit and tag, publish the release
+      issues: write # comment on released issues
+      pull-requests: write # comment on released pull requests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # semantic-release needs the tags and full history
+          persist-credentials: true # the @semantic-release/git plugin pushes with this token
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Verify the signatures of the release tooling
+        run: npm audit signatures
+      - name: semantic-release
+        id: release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  binaries:
+    name: Binaries
+    needs: release
+    if: needs.release.outputs.tag != ''
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-binaries.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}

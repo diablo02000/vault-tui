@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - run: mise run lint
+
+  verify:
+    name: Go modules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - run: mise run verify
+
+  pre-commit:
+    name: Pre-commit hooks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Already enforced by dedicated jobs; skip to avoid doing the work twice.
+      SKIP: go-lint,go-mod,shellcheck,hygiene,actionlint
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - run: mise run pre-commit
+
+  workflows:
+    name: Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - run: mise run lint-workflows
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - name: Unit tests
+        run: mise exec -- go test -race -shuffle=on -count=1 -coverprofile=coverage.out ./...
+      - name: Coverage summary
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          {
+            echo '### Coverage'
+            echo '```'
+            mise exec -- go tool cover -func=coverage.out | tail -n 1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
+
+  integration:
+    name: Integration (real Vault)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      vault:
+        image: hashicorp/vault:1.20
+        ports:
+          - 8200:8200
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: ci-dev-root-token
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        options: >-
+          --cap-add=IPC_LOCK
+          --health-cmd "wget -q --spider http://127.0.0.1:8200/v1/sys/health"
+          --health-interval 2s
+          --health-retries 30
+    env:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_TOKEN: ci-dev-root-token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - name: Seed the dev Vault
+        run: scripts/seed-dev-vault.sh
+      - run: mise run test-integration
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - run: mise run build
+      - name: Smoke test
+        run: ./bin/vault-tui --version
+
+  cross-build:
+    name: Cross-build (amd64 + arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --snapshot --clean
+
+  # Single required check for branch protection.
+  ci:
+    name: CI passed
+    if: always()
+    needs: [lint, verify, pre-commit, workflows, test, integration, build, cross-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more required jobs did not succeed" >&2
+            exit 1
+          fi

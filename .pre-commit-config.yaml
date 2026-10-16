@@ -1,0 +1,168 @@
+# Install once with:  mise run hooks
+# Run everything:     pre-commit run --all-files
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+
+repos:
+  # Documentation formatting
+  - repo: https://github.com/thlorenz/doctoc
+    rev: v2.3.0
+    hooks:
+      - id: doctoc
+        name: Update TOC in markdown
+        files: (README|CONTRIBUTING|CHANGELOG)\.md$
+        args: ["--title=**Table of Contents**", "--maxlevel=3"]
+
+  # Markdown linting with official CLI
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        name: Lint markdown files
+        files: \.md$
+        args: [--ignore-path=.markdownlintignore]
+
+  # Security: Detect secrets and hardcoded credentials
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+        name: Detect secrets
+        description: Prevent hardcoded credentials
+        args: [--staged, --verbose]
+
+  # Spelling checker
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        name: Check spelling
+        files: \.(md|txt|py|toml|yaml|yml)$
+        args: ["--ignore-words=.codespellignore", "--skip=CHANGELOG.md,*.lock,package-lock.json,go.sum"]
+
+  # GitHub Actions linting (only runs if workflow files exist)
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.9
+    hooks:
+      - id: actionlint
+        name: Lint GitHub Actions
+        files: \.github/workflows/.*\.ya?ml$
+        pass_filenames: true
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        files: \.(py|md|txt|yaml|yml|json|toml)$
+        args: [--markdown-linebreak-ext=md]
+
+      - id: end-of-file-fixer
+        name: Ensure files end with newline
+        files: \.(py|md|txt|yaml|yml|json|toml)$
+
+      - id: check-yaml
+        name: Validate YAML files
+        files: \.(yaml|yml)$
+
+      - id: check-added-large-files
+        name: Prevent large files
+        args: [--maxkb=500]
+
+      - id: check-json
+        name: Validate JSON files
+        files: \.json$
+
+      - id: check-toml
+        name: Validate TOML files
+        files: \.toml$
+
+      - id: check-merge-conflict
+        name: Detect merge conflict markers
+
+      - id: detect-private-key
+        name: Detect private keys
+
+      - id: check-case-conflict
+        name: Detect case-insensitive filename clashes
+
+      - id: mixed-line-ending
+        name: Enforce LF line endings
+        args: [--fix=lf]
+
+      - id: check-executables-have-shebangs
+        name: Executables need a shebang
+
+      - id: check-shebang-scripts-are-executable
+        name: Scripts with a shebang must be executable
+
+  # Renovate configuration validation
+  - repo: https://github.com/renovatebot/pre-commit-hooks
+    rev: 44.164.10
+    hooks:
+      - id: renovate-config-validator
+        name: Validate renovate.json
+        args: [--strict]
+
+  # Commit message validation with conventional commits
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.10.0
+    hooks:
+      - id: commitizen
+        name: Check commit message
+        stages: [commit-msg]
+
+  # Go: run through mise so hooks use the exact tool versions pinned in .mise.toml,
+  # the same ones CI uses.
+  - repo: local
+    hooks:
+      - id: go-format
+        name: Format Go (gofmt, goimports, golines)
+        entry: mise exec -- golangci-lint fmt
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-lint
+        name: Lint Go (golangci-lint incl. gosec)
+        entry: mise run lint
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-mod
+        name: go.mod / go.sum are tidy and verified
+        entry: mise run verify
+        language: system
+        files: ^go\.(mod|sum)$|\.go$
+        pass_filenames: false
+
+      - id: shellcheck
+        name: Lint shell scripts
+        entry: mise exec -- shellcheck
+        language: system
+        types: [shell]
+
+      - id: hygiene
+        name: No machine-specific data or secret-looking strings
+        entry: mise run hygiene
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Slower checks run on push instead of on every commit.
+      - id: go-test
+        name: Go unit tests (race detector)
+        entry: mise run test
+        language: system
+        types: [go]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: govulncheck
+        name: Known vulnerabilities (govulncheck)
+        entry: mise run vuln
+        language: system
+        files: ^go\.(mod|sum)$|\.go$
+        pass_filenames: false
+        stages: [pre-push]

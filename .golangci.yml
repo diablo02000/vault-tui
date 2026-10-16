@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - gosec       # insecure code patterns, subprocesses, file perms, hardcoded creds
+    - exhaustive
+    - errorlint   # correct error wrapping/comparison
+    - noctx       # HTTP requests must carry a context
+    - bodyclose   # leaked HTTP response bodies
+    - nilerr      # returning nil when err != nil
+    - gocritic
+  exclusions:
+    presets:
+      - comments
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - golines
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/diablo02000/vault-tui

@@ -1,0 +1,21 @@
+# build output
+bin/
+/vault-tui
+coverage.out
+*.out
+*.test
+
+# local configuration and anything that may hold credentials
+.env
+.env.*
+.vault
+.vault-token
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# release artifacts
+dist/
+node_modules/

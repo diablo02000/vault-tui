@@ -1,0 +1,16 @@
+{
+  "name": "vault-tui-release",
+  "private": true,
+  "description": "Release tooling only (semantic-release). vault-tui itself is a Go program.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.14"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "7.0.0",
+    "@semantic-release/exec": "7.1.0",
+    "@semantic-release/git": "11.0.1",
+    "@semantic-release/github": "12.0.10",
+    "semantic-release": "25.0.9"
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "timezone": "UTC",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "prConcurrentLimit": 10,
+  "rebaseWhen": "conflicted",
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ],
+    "minimumReleaseAge": null
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on the first day of the month"
+    ]
+  },
+  "enabledManagers": [
+    "gomod",
+    "github-actions",
+    "npm",
+    "mise",
+    "pre-commit",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "description": "Tools run through `go run <module>@<version>` in .mise.toml",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.mise\\.toml$/"
+      ],
+      "matchStrings": [
+        "go run (?<depName>[\\w.-]+(?:/[\\w.-]+)+?)(?:/cmd/[\\w.-]+)?@(?<currentValue>v[\\w.-]+)"
+      ],
+      "datasourceTemplate": "go",
+      "extractVersionTemplate": "^(?<version>v.*)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Go libraries ship in the binary: a bump is a patch release",
+      "matchManagers": [
+        "gomod"
+      ],
+      "semanticCommitType": "build",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "CI-only and tooling updates never change the binary",
+      "matchManagers": [
+        "github-actions",
+        "npm",
+        "pre-commit",
+        "mise",
+        "custom.regex"
+      ],
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "matchManagers": [
+        "mise"
+      ],
+      "matchDepNames": [
+        "go"
+      ],
+      "semanticCommitType": "build",
+      "description": "Toolchain updates (Go) often carry security fixes: build(deps) triggers a patch release",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Keep related libraries moving together",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/charmbracelet/**"
+      ],
+      "groupName": "charm"
+    },
+    {
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "golang.org/x/**"
+      ],
+      "groupName": "golang.org/x"
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "semantic-release",
+        "@semantic-release/**"
+      ],
+      "groupName": "semantic-release"
+    },
+    {
+      "description": "One PR for all workflow action bumps",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Group the linters and scanners pinned in .mise.toml and pre-commit",
+      "matchManagers": [
+        "pre-commit"
+      ],
+      "groupName": "pre-commit hooks"
+    }
+  ],
+  "pre-commit": {
+    "enabled": true
+  }
+}

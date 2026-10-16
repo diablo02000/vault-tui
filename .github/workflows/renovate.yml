@@ -1,0 +1,79 @@
+name: Renovate
+
+# Self-hosted Renovate. It needs a token that can open pull requests AND trigger
+# CI on them, which the default GITHUB_TOKEN cannot do. Create the repository
+# secret RENOVATE_TOKEN (fine-grained PAT or GitHub App token) with:
+#   Contents: read/write, Pull requests: read/write, Issues: read/write,
+#   Workflows: read/write, Metadata: read.
+on:
+  schedule:
+    - cron: "0 4 * * *" # daily; renovate.json decides when PRs are actually created
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Log what would change without creating branches or PRs
+        type: boolean
+        default: false
+      log-level:
+        description: Renovate log level
+        type: choice
+        options: [info, debug]
+        default: info
+  pull_request:
+    paths:
+      - renovate.json
+      - .github/workflows/renovate.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate renovate.json
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npx --yes --package renovate@44.164.10 -- renovate-config-validator --strict renovate.json
+
+  renovate:
+    name: Renovate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check for the RENOVATE_TOKEN secret
+        id: token
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "::warning::RENOVATE_TOKEN is not set; skipping. See the comment at the top of this workflow."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.token.outputs.present == 'true'
+        with:
+          persist-credentials: false
+      - uses: renovatebot/github-action@f0f41e5f2e706165f6814b1d0f0d0e319de7d1d9 # v46.3.8
+        if: steps.token.outputs.present == 'true'
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
+          configurationFile: renovate.json
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_DRY_RUN: ${{ inputs.dry-run && 'full' || '' }}
+          LOG_LEVEL: ${{ inputs.log-level || 'info' }}

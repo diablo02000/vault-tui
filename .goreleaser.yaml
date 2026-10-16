@@ -1,0 +1,41 @@
+version: 2
+
+project_name: vault-tui
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: vault-tui
+    main: .
+    binary: vault-tui
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w -buildid=
+      - -X github.com/diablo02000/vault-tui/cmd.Version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+# semantic-release owns the release notes and the CHANGELOG.
+changelog:
+  disable: true
+
+release:
+  mode: keep-existing
+  replace_existing_artifacts: true
