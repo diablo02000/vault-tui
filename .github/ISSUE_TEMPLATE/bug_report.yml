@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Never paste tokens or secret values.** Redact hostnames if needed.
+        Security problems must be reported privately, see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: vault-tui version
+      description: Output of `vault-tui --version`
+    validations:
+      required: true
+  - type: input
+    id: vault
+    attributes:
+      label: Vault version and edition
+      placeholder: "1.20 OSS, 1.19 Enterprise, HCP..."
+  - type: input
+    id: platform
+    attributes:
+      label: OS, architecture and terminal
+      placeholder: "Linux arm64, kitty"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce

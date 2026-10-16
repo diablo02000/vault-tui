@@ -28,9 +28,9 @@ vault-tui/
 ├── .mise.toml                   # Pinned tools and tasks
 ├── .pre-commit-config.yaml      # Git hooks
 ├── .releaserc.json              # semantic-release configuration
-├── renovate.json                # Dependency update policy (Renovate)
+├── renovate.json                # Dependency update policy (hosted Renovate app)
 ├── .goreleaser.yaml             # Binary builds attached to releases
-└── .github/                     # CI, security, release and Renovate workflows
+└── .github/                     # CI, security and release workflows
 ```
 
 ## Packages

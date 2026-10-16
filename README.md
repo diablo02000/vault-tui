@@ -2,6 +2,11 @@
 
 An interactive, read-only terminal UI for exploring HashiCorp Vault, built with [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
+[![CI](https://github.com/diablo02000/vault-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/diablo02000/vault-tui/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/diablo02000/vault-tui)](https://github.com/diablo02000/vault-tui/releases/latest)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/diablo02000/vault-tui/badge)](https://scorecard.dev/viewer/?uri=github.com/diablo02000/vault-tui)
+[![License: MIT](https://img.shields.io/github/license/diablo02000/vault-tui)](LICENSE)
+
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 **Table of Contents**
@@ -119,10 +124,11 @@ gh attestation verify vault-tui_<version>_linux_amd64.tar.gz --repo <owner>/vaul
 |----------|---------|--------------|
 | `ci.yml` | PR, push to `main` | lint, `go.mod` integrity, workflow lint, unit tests (Linux + macOS, race detector), integration tests against a real Vault dev server, build. The `CI passed` job is the single check to require. |
 | `security.yml` | PR, push, weekly | `govulncheck`, hygiene scan, CodeQL, dependency review |
+| `scorecard.yml` | push, weekly | OpenSSF Scorecard: grades supply-chain practices, results in the Security tab |
 | `pr-title.yml` | PR | enforces a [Conventional Commit](https://www.conventionalcommits.org/) title |
-| `release.yml` | push to `main` | [semantic-release](https://semantic-release.gitbook.io/) computes the next version from Conventional Commits, updates `CHANGELOG.md`, tags and publishes the GitHub release, then calls `build-binaries.yml` |
-| `build-binaries.yml` | `v*` tag push, called by `release.yml`, manual | builds linux and darwin binaries for amd64 and arm64 with GoReleaser, attaches the archives and `checksums.txt` to the release page, and adds build-provenance attestations |
-| `renovate.yml` | daily | [Renovate](https://docs.renovatebot.com/) opens PRs (Mondays before 06:00 UTC, security fixes immediately) for Go libraries, pinned action SHAs, the Vault image, npm release tooling, pre-commit hooks and the tools in `.mise.toml`. Validates `renovate.json` on PRs. Needs the `RENOVATE_TOKEN` secret. |
+| `release.yml` | push to `main` | [semantic-release](https://semantic-release.gitbook.io/) computes the next version from Conventional Commits, tags it and publishes the GitHub release with generated notes, then calls `build-binaries.yml`. It needs no secret. |
+| `build-binaries.yml` | `v*` tag push, manual | builds linux and darwin binaries for amd64 and arm64 with GoReleaser, attaches the archives and `checksums.txt` to the release page, and adds build-provenance attestations |
+| Renovate (hosted GitHub App) | PRs and dashboard | [Renovate](https://docs.renovatebot.com/) reads `renovate.json` and opens PRs for Go libraries, pinned action SHAs, the Vault image, npm release tooling, pre-commit hooks and the tools in `.mise.toml`. Security fixes are opened immediately; other updates on Monday mornings. It runs outside GitHub Actions, so it needs no secret. |
 
 Every action is pinned to a commit SHA, and Renovate keeps the pins current. CI runs the same `mise run` tasks as local development, so `mise run check` reproduces it.
 

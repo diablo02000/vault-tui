@@ -15,6 +15,7 @@ releases are produced.
   - [Pre-commit hooks](#pre-commit-hooks)
 - [Commit messages](#commit-messages)
 - [Releases](#releases)
+- [Repository settings](#repository-settings)
 - [Security rules](#security-rules)
 - [Tests](#tests)
 - [Code style](#code-style)
@@ -125,10 +126,32 @@ feat!: drop support for Vault < 1.12
 You never tag or edit the version by hand. When commits land on `main`, the `Release` workflow:
 
 1. computes the next version from the commit types,
-2. updates `CHANGELOG.md` and commits it,
-3. tags the release and publishes the GitHub release,
-4. builds the binaries (linux and darwin, amd64 and arm64) and attaches them to the release,
+2. tags the commit and publishes the GitHub release, with notes generated from the commits,
+3. builds the binaries (linux and darwin, amd64 and arm64) and attaches them to the release,
    with checksums and a build-provenance attestation.
+
+The changelog is the list of GitHub releases. A commit that is not a feature, fix or other
+releasable type does not create a release.
+
+## Repository settings
+
+These settings were applied once, by hand, in the GitHub UI. Re-check them after any change of
+owner or plan.
+
+- **Rulesets:**
+  - `main`: no deletion, no force-push, linear history, PR required (squash only, 0 approvals,
+    conversations resolved), required checks `CI passed` and `Conventional Commit title`.
+  - `release-tags`: `v*` tags cannot be deleted or updated.
+  - The repository admin role is the only bypass actor.
+- **Merging:** squash only, the PR title and body become the commit message, branches are deleted
+  after merge.
+- **Security:** secret scanning with push protection, Dependabot alerts (not security updates,
+  Renovate covers those), private vulnerability reporting, immutable releases.
+- **Actions:** SHA pinning required, only GitHub-owned actions and the pinned third-party ones
+  allowed, default token read-only, fork PRs need approval.
+
+Releases need no repository secret: the workflow uses the default `GITHUB_TOKEN`, which can create
+tags and releases but cannot bypass the rulesets, and it does not need to.
 
 ## Security rules
 
