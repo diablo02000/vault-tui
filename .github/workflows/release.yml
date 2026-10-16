@@ -1,9 +1,10 @@
 name: Release
 
-# semantic-release reads the Conventional Commits pushed to main, decides the
-# next version, updates CHANGELOG.md, tags and creates the GitHub release.
-# The binaries are then built and attached by build-binaries.yml, called below
-# (a tag pushed with GITHUB_TOKEN would not trigger it on its own).
+# semantic-release reads the Conventional Commits pushed to main, decides the next
+# version, tags the commit and publishes the GitHub release with generated notes.
+# Nothing is committed back to the repository, so the default GITHUB_TOKEN is
+# enough and no secret is needed. The binaries are then built by
+# build-binaries.yml, called below with the new tag.
 on:
   push:
     branches: [main]
@@ -18,19 +19,19 @@ concurrency:
 jobs:
   release:
     name: Release
-    outputs:
-      tag: ${{ steps.release.outputs.tag }} # empty when no release was needed
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write # push the release commit and tag, publish the release
+      contents: write # create the tag and the GitHub release
       issues: write # comment on released issues
       pull-requests: write # comment on released pull requests
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }} # empty when no release was needed
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # semantic-release needs the tags and full history
-          persist-credentials: true # the @semantic-release/git plugin pushes with this token
+          persist-credentials: true # semantic-release pushes the tag with this credential
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -39,18 +40,25 @@ jobs:
       - name: Verify the signatures of the release tooling
         run: npm audit signatures
       - name: semantic-release
-        id: release
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find the tag created for this commit
+        id: tag
+        run: |
+          # semantic-release tags the commit that was just released, so only a tag
+          # pointing at HEAD is new. Nothing is printed when no release happened.
+          tag="$(git tag --points-at HEAD --list 'v*' | sort -V | tail -n 1)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then echo "Released $tag"; fi
 
   binaries:
     name: Binaries
     needs: release
     if: needs.release.outputs.tag != ''
     permissions:
-      contents: write
-      id-token: write
+      contents: write # upload the archives to the release
+      id-token: write # sign the provenance attestation
       attestations: write
     uses: ./.github/workflows/build-binaries.yml
     with:

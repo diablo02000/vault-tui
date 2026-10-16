@@ -32,7 +32,7 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# semantic-release owns the release notes and the CHANGELOG.
+# semantic-release owns the release notes; GoReleaser only builds and uploads.
 changelog:
   disable: true
 

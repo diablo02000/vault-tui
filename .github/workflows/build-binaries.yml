@@ -5,10 +5,11 @@ name: Build binaries
 # of a version tag.
 #
 # Triggers:
-#   - a v*.*.* tag is pushed (manual tags, or tags pushed with a PAT)
-#   - called by release.yml right after semantic-release tags a version
-#     (tags pushed with the default GITHUB_TOKEN do not trigger workflows)
+#   - called by release.yml with the tag semantic-release just created
+#     (a tag pushed by GITHUB_TOKEN would not trigger a workflow, hence the call)
+#   - a v*.*.* tag pushed by hand
 #   - run by hand for an existing tag, e.g. to rebuild a release
+
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
