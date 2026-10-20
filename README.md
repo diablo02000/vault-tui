@@ -35,6 +35,12 @@ An interactive, read-only terminal UI for exploring HashiCorp Vault, built with 
 ## Requirements
 
 - [mise](https://mise.jdx.dev/): manages the Go version, linter and task runner
+- A terminal with [OSC 52](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-Operating-System-Commands) support, used to copy secrets to the clipboard (some terminals require enabling it)
+- When running inside tmux (3.3 or later), passthrough must be enabled in `~/.tmux.conf`, otherwise copying silently does nothing:
+
+  ```tmux
+  set -g allow-passthrough on
+  ```
 
 ## Getting started
 
@@ -87,7 +93,7 @@ Flags override environment variables.
 The Vault server is trusted with your token but **not** trusted to render text:
 
 - **Terminal injection**: every string coming from Vault (secret names and values, policies, descriptions, errors) is sanitised before display. Control characters, escape sequences and bidirectional overrides are replaced, and newlines in values are shown as `\n`, so a hostile value cannot rewrite the screen or fake extra rows.
-- **Clipboard**: `y` copies the selected value without displaying it. The clipboard is wiped after 30 seconds and on quit, but only if it still holds that value (anything you copied meanwhile is left alone). Only a SHA-256 digest of the copied value is kept to make that check. The copied value is raw, so paste untrusted secrets into a terminal with care. On Linux, `xclip`, `xsel` or `wl-clipboard` is required.
+- **Clipboard**: `y` copies the selected value without displaying it, using the OSC 52 terminal escape sequence, so it works over SSH and needs no `xclip`, `xsel` or `wl-clipboard`. Your terminal must support OSC 52 (most do; some ask you to enable it) and, inside tmux, `set -g allow-passthrough on`. The value is sent base64-encoded and is never kept in memory by the clipboard layer. OSC 52 cannot read the clipboard back, so the clipboard is overwritten with an empty value 30 seconds after the copy and on quit, even if you copied something else in the meantime. The copied value is raw, so paste untrusted secrets into a terminal with care.
 - **Search**: `s` opens a search pane with three fields, and `enter` runs the search.
   - *Path scope* is a glob matched level by level from the mount, where `*` is one level and `**` any depth. `secrets/kubernetes/*/smart-entry/smart-entry-vault/` searches only the `int`, `sta` and `prd` folders; folders that cannot match are never listed, and everything below the matched folder is searched.
   - *Path regex* filters the full secret path, and *Key regex* matches secret key names. Both are RE2 (no catastrophic backtracking) and case-insensitive. Without a key regex, secrets are matched on their path alone and never read.

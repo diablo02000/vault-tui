@@ -210,7 +210,14 @@ func (v *SecretsView) Update(msg tea.Msg) (View, tea.Cmd) {
 				safe.Line(msg.key), c.Delay())
 			v.renderSecret()
 		}
-		return v, nil
+		if msg.err != nil {
+			return v, nil
+		}
+		// Started only once the copy happened; skipped if a newer copy supersedes it.
+		return v, func() tea.Msg {
+			_ = v.clipboard.ClearAfterDelay()
+			return nil
+		}
 	case tea.KeyMsg:
 		return v.handleKey(msg)
 	}
@@ -391,8 +398,8 @@ func (v *SecretsView) moveCursor(delta int) {
 	v.detail.reveal(v.dataLine + v.cursor)
 }
 
-// copySelected copies the selected value to the clipboard and schedules its
-// removal. The value is read here and never stored in a message or on screen.
+// copySelected copies the selected value to the clipboard; the copyMsg handler
+// schedules its removal. The value is read here and never stored in a message or on screen.
 func (v *SecretsView) copySelected() tea.Cmd {
 	if v.secret == nil || v.cursor >= len(v.dataKeys) {
 		return nil
@@ -401,13 +408,7 @@ func (v *SecretsView) copySelected() tea.Cmd {
 	value := formatValue(v.secret.Data[name])
 	c := v.clipboard
 	v.err = nil
-	return tea.Batch(
-		func() tea.Msg { return copyMsg{key: name, err: c.Copy(value)} },
-		func() tea.Msg {
-			_ = c.ClearAfterDelay() // only wipes if the clipboard still holds our value
-			return nil
-		},
-	)
+	return func() tea.Msg { return copyMsg{key: name, err: c.Copy(value)} }
 }
 
 func (v *SecretsView) renderSecret() {
