@@ -76,6 +76,7 @@ Flags override environment variables.
 | `/`              | Filter the current list         |
 | `tab`, `1` `2` `3` | Switch tab                    |
 | `v`              | Reveal / hide secret values     |
+| `y`, `c`        | Copy the selected secret value to the clipboard |
 | `r`              | Refresh                         |
 | `?`              | Toggle help                     |
 | `q`, `ctrl+c`    | Quit                            |
@@ -85,6 +86,7 @@ Flags override environment variables.
 The Vault server is trusted with your token but **not** trusted to render text:
 
 - **Terminal injection**: every string coming from Vault (secret names and values, policies, descriptions, errors) is sanitised before display. Control characters, escape sequences and bidirectional overrides are replaced, and newlines in values are shown as `\n`, so a hostile value cannot rewrite the screen or fake extra rows.
+- **Clipboard**: `y` copies the selected value without displaying it. The clipboard is wiped after 30 seconds and on quit, but only if it still holds that value (anything you copied meanwhile is left alone). Only a SHA-256 digest of the copied value is kept to make that check. The copied value is raw, so paste untrusted secrets into a terminal with care. On Linux, `xclip`, `xsel` or `wl-clipboard` is required.
 - **Token confinement**: redirects are never followed (the Vault client would re-send the token to the redirect target), and the ambient `VAULT_AGENT_ADDR` is ignored so requests always go to the address shown in the status bar.
 - **Address**: URLs containing credentials are rejected. Plain HTTP to a non-loopback host and `--tls-skip-verify` display a warning in the status bar.
 - **Token handling**: tokens are validated (no whitespace or control characters, bounded length), the token helper runs with a timeout and without a shell, and `~/.vault` / `~/.vault-token` are read only if they are small regular files. Tokens are never logged.

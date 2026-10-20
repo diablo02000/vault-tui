@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/diablo02000/vault-tui/internal/tui/clip"
 	"github.com/diablo02000/vault-tui/internal/tui/components"
 	"github.com/diablo02000/vault-tui/internal/tui/keys"
 	"github.com/diablo02000/vault-tui/internal/tui/views"
@@ -55,16 +56,31 @@ type Model struct {
 	help   components.Help
 	width  int
 	height int
+	clip   *clip.Clipboard
 }
 
+// Option customises the model.
+type Option func(*options)
+
+type options struct{ clipboard clip.Backend }
+
+// WithClipboard replaces the system clipboard (used by tests).
+func WithClipboard(b clip.Backend) Option { return func(o *options) { o.clipboard = b } }
+
 // New builds the application model on top of a Vault reader.
-func New(r vault.Reader, info Info) Model {
+func New(r vault.Reader, info Info, opts ...Option) Model {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	k := keys.Default()
+	c := clip.New(o.clipboard)
 	return Model{
 		keys: k,
 		info: info,
+		clip: c,
 		views: []views.View{
-			views.NewSecretsView(r, k),
+			views.NewSecretsView(r, k, c),
 			views.NewPoliciesView(r, k),
 			views.NewAuthView(r, k),
 		},
@@ -103,14 +119,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+		return m, m.quit()
 	}
 	if m.views[m.active].Capturing() {
 		return m, m.updateActive(msg)
 	}
 	switch {
 	case key.Matches(msg, m.keys.Quit):
-		return m, tea.Quit
+		return m, m.quit()
 	case key.Matches(msg, m.keys.Help):
 		m.help.Expanded = !m.help.Expanded
 		m.layout()
@@ -128,6 +144,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.updateActive(msg)
 	}
 	return m, nil
+}
+
+// quit wipes any secret still in the clipboard before leaving.
+func (m Model) quit() tea.Cmd {
+	_ = m.clip.Clear()
+	return tea.Quit
 }
 
 func (m Model) updateActive(msg tea.Msg) tea.Cmd {

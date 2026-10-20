@@ -35,9 +35,30 @@ func (d *Detail) resize(w, h int) {
 }
 
 func (d *Detail) set(title, content string) {
-	d.title = safe.Line(title)
-	d.vp.SetContent(content)
+	d.rerender(title, content)
 	d.vp.GotoTop()
+}
+
+// rerender replaces the content but keeps the scroll position, so toggling
+// reveal or moving the cursor does not jump back to the top.
+func (d *Detail) rerender(title, content string) {
+	d.title = safe.Line(title)
+	off := d.vp.YOffset
+	d.vp.SetContent(content)
+	d.vp.SetYOffset(off)
+}
+
+// top scrolls back to the first line.
+func (d *Detail) top() { d.vp.GotoTop() }
+
+// reveal scrolls just enough to make line visible.
+func (d *Detail) reveal(line int) {
+	switch {
+	case line < d.vp.YOffset:
+		d.vp.SetYOffset(line)
+	case line >= d.vp.YOffset+d.vp.Height:
+		d.vp.SetYOffset(line - d.vp.Height + 1)
+	}
 }
 
 func (d *Detail) update(msg tea.Msg) tea.Cmd {
@@ -81,4 +102,22 @@ func formatValue(v any) string {
 		}
 	}
 	return fmt.Sprint(v)
+}
+
+// renderData is renderMap for secret data: keys come pre-sorted and the one at
+// cursor is marked as the target of the copy action.
+func renderData(m map[string]any, keys []string, cursor int, mask bool) string {
+	var b strings.Builder
+	for i, k := range keys {
+		v := maskedValue
+		if !mask {
+			v = formatValue(m[k])
+		}
+		marker := "  "
+		if i == cursor {
+			marker = titleStyle.Render("▸ ")
+		}
+		fmt.Fprintf(&b, "%s%s  %s\n", marker, keyStyle.Render(safe.Line(k)), safe.Line(v))
+	}
+	return b.String()
 }

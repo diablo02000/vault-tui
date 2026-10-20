@@ -3,6 +3,7 @@ module github.com/diablo02000/vault-tui
 go 1.26.9
 
 require (
+	github.com/atotto/clipboard v0.1.4
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -13,7 +14,6 @@ require (
 )
 
 require (
-	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
