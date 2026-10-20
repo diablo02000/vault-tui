@@ -77,6 +77,7 @@ Flags override environment variables.
 | `tab`, `1` `2` `3` | Switch tab                    |
 | `v`              | Reveal / hide secret values     |
 | `y`, `c`        | Copy the selected secret value to the clipboard |
+| `s`              | Search secrets (opens a pane over the browser) |
 | `r`              | Refresh                         |
 | `?`              | Toggle help                     |
 | `q`, `ctrl+c`    | Quit                            |
@@ -87,6 +88,10 @@ The Vault server is trusted with your token but **not** trusted to render text:
 
 - **Terminal injection**: every string coming from Vault (secret names and values, policies, descriptions, errors) is sanitised before display. Control characters, escape sequences and bidirectional overrides are replaced, and newlines in values are shown as `\n`, so a hostile value cannot rewrite the screen or fake extra rows.
 - **Clipboard**: `y` copies the selected value without displaying it. The clipboard is wiped after 30 seconds and on quit, but only if it still holds that value (anything you copied meanwhile is left alone). Only a SHA-256 digest of the copied value is kept to make that check. The copied value is raw, so paste untrusted secrets into a terminal with care. On Linux, `xclip`, `xsel` or `wl-clipboard` is required.
+- **Search**: `s` opens a search pane with three fields, and `enter` runs the search.
+  - *Path scope* is a glob matched level by level from the mount, where `*` is one level and `**` any depth. `secrets/kubernetes/*/smart-entry/smart-entry-vault/` searches only the `int`, `sta` and `prd` folders; folders that cannot match are never listed, and everything below the matched folder is searched.
+  - *Path regex* filters the full secret path, and *Key regex* matches secret key names. Both are RE2 (no catastrophic backtracking) and case-insensitive. Without a key regex, secrets are matched on their path alone and never read.
+  - Results show paths and matching key names only, never values; open one with `enter` and `esc` returns to the results. A search is bounded (3000 Vault calls, 1000 results, 8 concurrent calls, 2 minutes), can be cancelled with `esc`, and reports skipped (e.g. permission denied) and truncated searches.
 - **Token confinement**: redirects are never followed (the Vault client would re-send the token to the redirect target), and the ambient `VAULT_AGENT_ADDR` is ignored so requests always go to the address shown in the status bar.
 - **Address**: URLs containing credentials are rejected. Plain HTTP to a non-loopback host and `--tls-skip-verify` display a warning in the status bar.
 - **Token handling**: tokens are validated (no whitespace or control characters, bounded length), the token helper runs with a timeout and without a shell, and `~/.vault` / `~/.vault-token` are read only if they are small regular files. Tokens are never logged.

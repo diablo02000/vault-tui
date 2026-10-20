@@ -485,3 +485,143 @@ func TestClipboardWipedOnQuit(t *testing.T) {
 		t.Fatalf("clipboard not wiped on quit: %q", c.text)
 	}
 }
+
+// searchFor opens the search pane and submits the three fields.
+func (d *driver) searchFor(scope, pathRe, keyRe string) {
+	d.key("s")
+	d.key(scope)
+	d.key("tab")
+	d.key(pathRe)
+	d.key("tab")
+	d.key(keyRe)
+	d.key("enter")
+}
+
+func TestSearchPaneOpensOverBrowser(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.wantView("secret/")
+	d.key("s")
+	d.wantView("Search secrets", "Path scope", "Path regex", "Key regex")
+	d.wantNotView("pki/") // the pane replaces the mounts list
+	d.key("esc")
+	d.wantView("pki/")
+	d.wantNotView("Search secrets")
+}
+
+func TestSearchFindsSecretsByScopeAndKey(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.searchFor("secret/app", "", "^pass")
+	d.wantView("secret/app/db", "keys: password", "1 match(es)")
+	d.wantNotView("hunter2", "secret/top")
+}
+
+func TestSearchTypingIsNotInterpretedAsShortcuts(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.key("s")
+	d.key("q1v?") // would quit / switch tab / reveal / help outside of the form
+	d.wantView("Search secrets", "q1v?")
+	d.wantNotView("admin") // the policies tab did not open
+}
+
+func TestSearchOpenResultAndComeBack(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.searchFor("secret/app", "", "password")
+	d.key("enter") // focus is on the results: open the secret
+	d.wantView("password", "********", "secret/app/db")
+	d.wantNotView("hunter2", "Search secrets")
+
+	d.key("esc") // back to the results, not the folder list
+	d.wantView("Search secrets", "secret/app/db", "keys: password")
+
+	d.key("esc") // close the pane: back where it was opened (mounts)
+	d.wantView("pki/")
+	d.wantNotView("Search secrets")
+}
+
+func TestSearchRestoresPreviousFolderOnClose(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.key("enter") // secret/
+	d.key("enter") // app/
+	d.wantView("secret/app/")
+	d.searchFor("secret", "", "password")
+	d.key("enter") // open result
+	d.key("esc")   // results
+	d.key("esc")   // close
+	d.wantView("secret/app/", "db")
+	d.key("esc")
+	d.wantView("app/", "top") // normal navigation still works
+}
+
+func TestSearchSecretOpenedAfterSearchIsMaskedAgain(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.searchFor("secret/app", "", "password")
+	d.key("enter")
+	d.key("v")
+	d.wantView("hunter2")
+	d.key("esc")
+	d.wantNotView("hunter2")
+	d.key("enter")
+	d.wantView("********")
+	d.wantNotView("hunter2")
+}
+
+func TestSearchNoResults(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.searchFor("secret", "", "nomatchhere")
+	d.wantView("0 match(es)")
+}
+
+func TestSearchValidation(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.key("s")
+	d.key("enter")
+	d.wantView("enter at least one criterion")
+
+	d.key("tab")
+	d.key("(") // invalid regex in the path field
+	d.key("enter")
+	d.wantView("path regex")
+}
+
+func TestSearchErrorsAreNeutralised(t *testing.T) {
+	v := fakeVault()
+	d := newDriver(t, v)
+	v.Err = errors.New("bad\x1b]0;pwned\x07")
+	d.key("s")
+	d.key("secret")
+	d.key("enter")
+	d.wantNotView("\x1b]0;pwned")
+}
+
+func TestSearchHostileNamesAreNeutralised(t *testing.T) {
+	v := fakeVault()
+	evil := "secret/\x1b[2Jevil"
+	v.Keys["secret/"] = append(v.Keys["secret/"], "\x1b[2Jevil")
+	v.Secrets[evil] = &vault.Secret{Path: evil, Data: map[string]any{"\x1b[31mk": "v"}}
+	d := newDriver(t, v)
+	d.searchFor("secret", "", "k")
+	d.wantNotView("\x1b[2J", "\x1b[31m")
+}
+
+func TestSearchFocusCyclesThroughFields(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.key("s")
+	d.key("aa")
+	d.key("tab")
+	d.key("bb")
+	d.key("tab")
+	d.key("cc")
+	d.key("tab") // results
+	d.key("shift+tab")
+	d.key("d") // back in the key field
+	d.wantView("aa", "bb", "ccd")
+}
+
+func TestSearchQueryIsKeptWhenReopened(t *testing.T) {
+	d := newDriver(t, fakeVault())
+	d.searchFor("secret/app", "", "password")
+	d.key("esc")
+	d.key("s")
+	d.wantView("secret/app", "password")
+	d.wantNotView("keys: password") // old results are discarded
+}

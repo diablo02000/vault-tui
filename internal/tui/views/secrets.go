@@ -21,6 +21,7 @@ const (
 	secretsMounts secretsMode = iota
 	secretsPaths
 	secretsDetail
+	secretsSearch
 )
 
 type (
@@ -66,6 +67,17 @@ type SecretsView struct {
 	cursor    int      // index in dataKeys of the value that "copy" targets
 	dataLine  int      // line of the first data row in the detail pane
 	notice    string
+
+	search     searchPane
+	searchFrom searchOrigin // where the search pane was opened from
+	fromSearch bool         // the detail view was opened from search results
+}
+
+// searchOrigin is the browser location to restore when the search pane closes.
+type searchOrigin struct {
+	mode  secretsMode
+	mount vault.Mount
+	dir   string
 }
 
 // NewSecretsView creates the secrets tab.
@@ -77,6 +89,7 @@ func NewSecretsView(r vault.Reader, k keys.KeyMap, c *clip.Clipboard) *SecretsVi
 		mounts:    newList(),
 		paths:     newList(),
 		detail:    newDetail(),
+		search:    newSearchPane(),
 	}
 }
 
@@ -87,6 +100,7 @@ func (v *SecretsView) Resize(w, h int) {
 	v.mounts.SetSize(w, v.contentHeight())
 	v.paths.SetSize(w, v.contentHeight())
 	v.detail.resize(w, v.contentHeight())
+	v.search.resize(w, v.contentHeight())
 }
 
 func (v *SecretsView) Capturing() bool {
@@ -95,6 +109,8 @@ func (v *SecretsView) Capturing() bool {
 		return filtering(v.mounts)
 	case secretsPaths:
 		return filtering(v.paths)
+	case secretsSearch:
+		return true // the form owns the keyboard; esc closes it
 	case secretsDetail:
 		return false
 	}
@@ -107,6 +123,8 @@ func (v *SecretsView) Path() string {
 		return "secrets"
 	case secretsPaths:
 		return v.mount.Path + v.dir
+	case secretsSearch:
+		return "search"
 	case secretsDetail:
 		if v.secret != nil {
 			return v.secret.Path
@@ -180,6 +198,9 @@ func (v *SecretsView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.detail.top()
 		}
 		return v, nil
+	case searchMsg:
+		v.onSearchDone(msg)
+		return v, nil
 	case copyMsg:
 		if msg.err != nil {
 			v.err = fmt.Errorf("copy failed: %w", msg.err)
@@ -198,13 +219,21 @@ func (v *SecretsView) Update(msg tea.Msg) (View, tea.Cmd) {
 
 // forward passes other messages to the widget currently shown.
 func (v *SecretsView) forward(msg tea.Msg) tea.Cmd {
-	if v.mode == secretsDetail {
+	switch v.mode {
+	case secretsDetail:
 		return v.detail.update(msg)
+	case secretsSearch:
+		return nil // the form handles its own keys; nothing else is addressed to it
+	case secretsMounts, secretsPaths:
+		return v.updateList(msg)
 	}
-	return v.updateList(msg)
+	return nil
 }
 
 func (v *SecretsView) handleKey(msg tea.KeyMsg) (View, tea.Cmd) {
+	if v.mode == secretsSearch {
+		return v.searchKey(msg)
+	}
 	if v.Capturing() {
 		return v, v.updateList(msg)
 	}
@@ -229,6 +258,9 @@ func (v *SecretsView) handleKey(msg tea.KeyMsg) (View, tea.Cmd) {
 			return v, v.updateList(msg)
 		}
 		return v, v.back()
+	case key.Matches(msg, v.keys.Search) && v.mode != secretsDetail:
+		v.openSearch()
+		return v, nil
 	case key.Matches(msg, v.keys.Refresh):
 		return v, v.refresh()
 	case key.Matches(msg, v.keys.Reveal) && v.mode == secretsDetail:
@@ -292,9 +324,9 @@ func (v *SecretsView) open() tea.Cmd {
 			setItems(&v.paths, nil)
 			return v.loadKeys()
 		}
-		v.reveal = false
+		v.reveal, v.fromSearch = false, false
 		return v.loadSecret(v.dir + name)
-	case secretsDetail:
+	case secretsSearch, secretsDetail:
 		return nil
 	}
 	return nil
@@ -309,6 +341,9 @@ func (v *SecretsView) back() tea.Cmd {
 		v.dataKeys, v.cursor, v.notice = nil, 0, ""
 		v.detail.set("", "")
 		v.mode = secretsPaths
+		if v.fromSearch {
+			v.mode, v.fromSearch = secretsSearch, false
+		}
 	case secretsPaths:
 		if v.dir == "" {
 			v.mode = secretsMounts
@@ -317,7 +352,7 @@ func (v *SecretsView) back() tea.Cmd {
 		v.dir = parentDir(v.dir)
 		setItems(&v.paths, nil)
 		return v.loadKeys()
-	case secretsMounts:
+	case secretsMounts, secretsSearch:
 	}
 	return nil
 }
@@ -332,6 +367,7 @@ func (v *SecretsView) refresh() tea.Cmd {
 		if v.secret != nil {
 			return v.loadSecret(strings.TrimPrefix(v.secret.Path, v.mount.Path))
 		}
+	case secretsSearch:
 	}
 	return nil
 }
@@ -404,6 +440,8 @@ func (v *SecretsView) View() string {
 		return v.render(v.paths.View())
 	case secretsDetail:
 		return v.render(v.detail.view())
+	case secretsSearch:
+		return v.render(v.search.view())
 	}
 	return ""
 }
