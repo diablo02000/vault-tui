@@ -19,6 +19,7 @@ type KeyMap struct {
 	Refresh key.Binding
 	Reveal  key.Binding
 	Copy    key.Binding
+	Search  key.Binding
 	Filter  key.Binding
 }
 
@@ -39,6 +40,7 @@ func Default() KeyMap {
 		Refresh: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		Reveal:  key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "reveal values")),
 		Copy:    key.NewBinding(key.WithKeys("y", "c"), key.WithHelp("y", "copy value")),
+		Search:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "search secrets")),
 		Filter:  key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
 	}
 }
@@ -52,7 +54,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Select, k.Back},
-		{k.Filter, k.Refresh, k.Reveal, k.Copy},
+		{k.Filter, k.Search, k.Refresh, k.Reveal, k.Copy},
 		{k.NextTab, k.PrevTab, k.Tab1, k.Tab2, k.Tab3},
 		{k.Help, k.Quit},
 	}
