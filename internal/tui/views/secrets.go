@@ -2,13 +2,16 @@ package views
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/diablo02000/vault-tui/internal/tui/clip"
 	"github.com/diablo02000/vault-tui/internal/tui/keys"
+	"github.com/diablo02000/vault-tui/internal/tui/safe"
 	"github.com/diablo02000/vault-tui/internal/vault"
 )
 
@@ -36,6 +39,11 @@ type (
 		secret *vault.Secret
 		err    error
 	}
+	// copyMsg reports the outcome of a clipboard write. It never carries the value.
+	copyMsg struct {
+		key string
+		err error
+	}
 )
 
 // SecretsView browses secret engines, KV paths and secret contents.
@@ -52,16 +60,23 @@ type SecretsView struct {
 	dir    string // current folder inside the mount, "" or "a/b/"
 	secret *vault.Secret
 	reveal bool
+
+	clipboard *clip.Clipboard
+	dataKeys  []string // sorted keys of secret.Data
+	cursor    int      // index in dataKeys of the value that "copy" targets
+	dataLine  int      // line of the first data row in the detail pane
+	notice    string
 }
 
 // NewSecretsView creates the secrets tab.
-func NewSecretsView(r vault.Reader, k keys.KeyMap) *SecretsView {
+func NewSecretsView(r vault.Reader, k keys.KeyMap, c *clip.Clipboard) *SecretsView {
 	return &SecretsView{
-		base:   base{keys: k},
-		reader: r,
-		mounts: newList(),
-		paths:  newList(),
-		detail: newDetail(),
+		base:      base{keys: k},
+		reader:    r,
+		clipboard: c,
+		mounts:    newList(),
+		paths:     newList(),
+		detail:    newDetail(),
 	}
 }
 
@@ -160,6 +175,18 @@ func (v *SecretsView) Update(msg tea.Msg) (View, tea.Cmd) {
 		if v.finish(msg.seq, msg.err) && msg.err == nil {
 			v.secret = msg.secret
 			v.mode = secretsDetail
+			v.resetCursor()
+			v.renderSecret()
+			v.detail.top()
+		}
+		return v, nil
+	case copyMsg:
+		if msg.err != nil {
+			v.err = fmt.Errorf("copy failed: %w", msg.err)
+		} else if v.mode == secretsDetail && v.secret != nil {
+			c := v.clipboard
+			v.notice = fmt.Sprintf("copied %q (clipboard cleared in %s)",
+				safe.Line(msg.key), c.Delay())
 			v.renderSecret()
 		}
 		return v, nil
@@ -180,6 +207,18 @@ func (v *SecretsView) forward(msg tea.Msg) tea.Cmd {
 func (v *SecretsView) handleKey(msg tea.KeyMsg) (View, tea.Cmd) {
 	if v.Capturing() {
 		return v, v.updateList(msg)
+	}
+	if v.mode == secretsDetail {
+		switch {
+		case key.Matches(msg, v.keys.Up):
+			v.moveCursor(-1)
+			return v, nil
+		case key.Matches(msg, v.keys.Down):
+			v.moveCursor(1)
+			return v, nil
+		case key.Matches(msg, v.keys.Copy):
+			return v, v.copySelected()
+		}
 	}
 	switch {
 	case key.Matches(msg, v.keys.Select):
@@ -267,6 +306,7 @@ func (v *SecretsView) back() tea.Cmd {
 	case secretsDetail:
 		// Do not keep secret values in memory (or on screen) once left.
 		v.secret, v.reveal = nil, false
+		v.dataKeys, v.cursor, v.notice = nil, 0, ""
 		v.detail.set("", "")
 		v.mode = secretsPaths
 	case secretsPaths:
@@ -296,19 +336,64 @@ func (v *SecretsView) refresh() tea.Cmd {
 	return nil
 }
 
+func (v *SecretsView) resetCursor() {
+	v.dataKeys = v.dataKeys[:0]
+	for k := range v.secret.Data {
+		v.dataKeys = append(v.dataKeys, k)
+	}
+	sort.Strings(v.dataKeys)
+	v.cursor, v.notice = 0, ""
+}
+
+func (v *SecretsView) moveCursor(delta int) {
+	if len(v.dataKeys) == 0 {
+		return
+	}
+	v.cursor = min(max(v.cursor+delta, 0), len(v.dataKeys)-1)
+	v.notice = ""
+	v.renderSecret()
+	v.detail.reveal(v.dataLine + v.cursor)
+}
+
+// copySelected copies the selected value to the clipboard and schedules its
+// removal. The value is read here and never stored in a message or on screen.
+func (v *SecretsView) copySelected() tea.Cmd {
+	if v.secret == nil || v.cursor >= len(v.dataKeys) {
+		return nil
+	}
+	name := v.dataKeys[v.cursor]
+	value := formatValue(v.secret.Data[name])
+	c := v.clipboard
+	v.err = nil
+	return tea.Batch(
+		func() tea.Msg { return copyMsg{key: name, err: c.Copy(value)} },
+		func() tea.Msg {
+			_ = c.ClearAfterDelay() // only wipes if the clipboard still holds our value
+			return nil
+		},
+	)
+}
+
 func (v *SecretsView) renderSecret() {
 	var b strings.Builder
+	lines := 0
 	if len(v.secret.Metadata) > 0 {
 		b.WriteString(dimStyle.Render("metadata") + "\n")
 		b.WriteString(renderMap(v.secret.Metadata, false) + "\n")
+		lines = len(v.secret.Metadata) + 2
 	}
 	b.WriteString(dimStyle.Render("data") + "\n")
-	b.WriteString(renderMap(v.secret.Data, !v.reveal))
+	v.dataLine = lines + 1
+	b.WriteString(renderData(v.secret.Data, v.dataKeys, v.cursor, !v.reveal))
 	title := v.secret.Path
 	if !v.reveal {
 		title += "  (values hidden, press v to reveal)"
 	}
-	v.detail.set(title, b.String())
+	title += "  [y: copy selected value]"
+	if v.notice != "" {
+		title = v.notice
+	}
+	v.detail.rerender(title, b.String())
 }
 
 func (v *SecretsView) View() string {

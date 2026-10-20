@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,11 +64,40 @@ type driver struct {
 	m tea.Model
 }
 
+// memClip is an in-memory clipboard.
+type memClip struct {
+	mu   sync.Mutex
+	text string
+	err  error
+}
+
+func (c *memClip) Read() (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.text, c.err
+}
+
+func (c *memClip) Write(s string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil {
+		return c.err
+	}
+	c.text = s
+	return nil
+}
+
 func newDriver(t *testing.T, r vault.Reader) *driver {
+	t.Helper()
+	return newDriverClip(t, r, &memClip{})
+}
+
+func newDriverClip(t *testing.T, r vault.Reader, c *memClip) *driver {
 	t.Helper()
 	d := &driver{
 		t: t,
-		m: tui.New(r, tui.Info{Address: "http://vault:8200", TokenSource: "VAULT_TOKEN"}),
+		m: tui.New(r, tui.Info{Address: "http://vault:8200", TokenSource: "VAULT_TOKEN"},
+			tui.WithClipboard(c)),
 	}
 	d.send(tea.WindowSizeMsg{Width: 100, Height: 30})
 	d.run(d.m.Init())
@@ -400,5 +430,58 @@ func TestInfoWarningsAreShown(t *testing.T) {
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
 	if !strings.Contains(next.View(), "token sent over plain HTTP") {
 		t.Errorf("warning not visible:\n%s", next.View())
+	}
+}
+
+func TestCopySecretValue(t *testing.T) {
+	v := fakeVault()
+	v.Secrets["secret/app/db"].Data["user"] = "admin"
+	c := &memClip{}
+	d := newDriverClip(t, v, c)
+	d.key("enter")
+	d.key("enter")
+	d.key("enter") // detail; cursor on "password" (sorted first)
+
+	d.key("y")
+	if c.text != "admin" && c.text != "hunter2" {
+		t.Fatalf("clipboard = %q", c.text)
+	}
+	if c.text != "hunter2" {
+		t.Fatalf("expected first sorted key (password), got %q", c.text)
+	}
+	d.wantView("copied", `"password"`)
+	d.wantNotView("hunter2") // copying must not reveal the value
+
+	d.key("j")
+	d.key("y")
+	if c.text != "admin" {
+		t.Fatalf("clipboard after moving = %q", c.text)
+	}
+}
+
+func TestCopyFailureIsReported(t *testing.T) {
+	c := &memClip{err: errors.New("no display")}
+	d := newDriverClip(t, fakeVault(), c)
+	d.key("enter")
+	d.key("enter")
+	d.key("enter")
+	d.key("y")
+	d.wantView("copy failed", "no display")
+	d.wantNotView("hunter2")
+}
+
+func TestClipboardWipedOnQuit(t *testing.T) {
+	c := &memClip{}
+	d := newDriverClip(t, fakeVault(), c)
+	d.key("enter")
+	d.key("enter")
+	d.key("enter")
+	d.key("y")
+	if c.text != "hunter2" {
+		t.Fatalf("clipboard = %q", c.text)
+	}
+	d.key("q")
+	if c.text != "" {
+		t.Fatalf("clipboard not wiped on quit: %q", c.text)
 	}
 }
