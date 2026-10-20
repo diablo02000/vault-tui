@@ -1,7 +1,11 @@
 package clip_test
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +17,6 @@ type mem struct {
 	err  error
 }
 
-func (m *mem) Read() (string, error) { return m.text, m.err }
 func (m *mem) Write(s string) error {
 	if m.err != nil {
 		return m.err
@@ -21,6 +24,8 @@ func (m *mem) Write(s string) error {
 	m.text = s
 	return nil
 }
+
+func (m *mem) Clear() error { return m.Write("") }
 
 func TestCopyThenClear(t *testing.T) {
 	b := &mem{}
@@ -36,19 +41,6 @@ func TestCopyThenClear(t *testing.T) {
 	}
 	if b.text != "" {
 		t.Fatalf("clipboard not wiped: %q", b.text)
-	}
-}
-
-func TestClearKeepsForeignContent(t *testing.T) {
-	b := &mem{}
-	c := clip.New(b)
-	_ = c.Copy("hunter2")
-	b.text = "something the user copied later"
-	if err := c.Clear(); err != nil {
-		t.Fatal(err)
-	}
-	if b.text != "something the user copied later" {
-		t.Fatalf("foreign clipboard content was wiped: %q", b.text)
 	}
 }
 
@@ -79,56 +71,102 @@ func TestClearAfterDelay(t *testing.T) {
 	}
 }
 
+func TestClearAfterDelaySupersededByNewerCopy(t *testing.T) {
+	b := &mem{}
+	c := clip.New(b)
+	c.SetDelay(20 * time.Millisecond)
+	_ = c.Copy("first")
+	done := make(chan error)
+	go func() { done <- c.ClearAfterDelay() }()
+	time.Sleep(5 * time.Millisecond)
+	_ = c.Copy("second")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if b.text != "second" {
+		t.Fatalf("stale timer wiped newer copy: %q", b.text)
+	}
+}
+
 func TestDefaultDelay(t *testing.T) {
 	if d := clip.New(&mem{}).Delay(); d != clip.ClearDelay {
 		t.Fatalf("delay = %v", d)
 	}
 }
 
-func TestClearReadError(t *testing.T) {
+func TestClearErrorKeepsTracking(t *testing.T) {
 	b := &mem{}
 	c := clip.New(b)
 	_ = c.Copy("x")
-	want := errors.New("read failed")
-	b.err = want
-	if err := c.Clear(); !errors.Is(err, want) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestClearWriteErrorKeepsTracking(t *testing.T) {
-	b := &failWrite{mem: mem{}}
-	c := clip.New(b)
-	_ = c.Copy("x")
-	b.fail = true
+	b.err = errors.New("write failed")
 	if err := c.Clear(); err == nil {
-		t.Fatal("expected write error")
+		t.Fatal("expected error")
 	}
-	b.fail = false
+	b.err = nil
 	if err := c.Clear(); err != nil || b.text != "" {
 		t.Fatalf("retry: err=%v clipboard=%q", err, b.text)
 	}
 }
 
-func TestClearTwiceIsNoop(t *testing.T) {
-	b := &mem{}
-	c := clip.New(b)
-	_ = c.Copy("x")
-	_ = c.Clear()
-	b.text = "later"
-	if err := c.Clear(); err != nil || b.text != "later" {
-		t.Fatalf("err=%v clipboard=%q", err, b.text)
+func TestOSC52WriteEncodesPayload(t *testing.T) {
+	t.Setenv("TMUX", "")
+	t.Setenv("TERM", "xterm-256color")
+	var buf bytes.Buffer
+	payload := "p@ss\x1b]0;evil\x07word"
+	if err := clip.NewOSC52(&buf).Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	enc := base64.StdEncoding.EncodeToString([]byte(payload))
+	if want := "\x1b]52;c;" + enc + "\x07"; got != want {
+		t.Fatalf("sequence = %q, want %q", got, want)
+	}
+	if strings.Count(got, "\x1b") != 1 || strings.Count(got, "\x07") != 1 {
+		t.Fatalf("raw value leaked into the escape stream: %q", got)
 	}
 }
 
-type failWrite struct {
-	mem
-	fail bool
+func TestOSC52Clear(t *testing.T) {
+	t.Setenv("TMUX", "")
+	t.Setenv("TERM", "xterm")
+	var buf bytes.Buffer
+	if err := clip.NewOSC52(&buf).Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != "\x1b]52;c;!\x07" {
+		t.Fatalf("sequence = %q", got)
+	}
 }
 
-func (f *failWrite) Write(s string) error {
-	if f.fail {
-		return errors.New("write failed")
+func TestOSC52WrapsInsideTmux(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,1,0")
+	var buf bytes.Buffer
+	if err := clip.NewOSC52(&buf).Write("x"); err != nil {
+		t.Fatal(err)
 	}
-	return f.mem.Write(s)
+	if got := buf.String(); !strings.HasPrefix(got, "\x1bPtmux;") {
+		t.Fatalf("not wrapped for tmux: %q", got)
+	}
+}
+
+func TestOSC52RejectsOversizedValue(t *testing.T) {
+	var buf bytes.Buffer
+	err := clip.NewOSC52(&buf).Write(strings.Repeat("a", clip.MaxSize+1))
+	if !errors.Is(err, clip.ErrTooLarge) || buf.Len() != 0 {
+		t.Fatalf("err=%v written=%d", err, buf.Len())
+	}
+}
+
+func TestOSC52RefusesNonTerminal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := clip.NewOSC52(f).Write("secret"); !errors.Is(err, clip.ErrNotTerminal) {
+		t.Fatalf("err = %v", err)
+	}
+	if st, _ := f.Stat(); st.Size() != 0 {
+		t.Fatal("secret written to a non-terminal")
+	}
 }

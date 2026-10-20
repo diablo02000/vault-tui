@@ -71,11 +71,7 @@ type memClip struct {
 	err  error
 }
 
-func (c *memClip) Read() (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.text, c.err
-}
+func (c *memClip) Clear() error { return c.Write("") }
 
 func (c *memClip) Write(s string) error {
 	c.mu.Lock()

@@ -21,11 +21,7 @@ type memClip struct {
 	err  error
 }
 
-func (c *memClip) Read() (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.text, c.err
-}
+func (c *memClip) Clear() error { return c.Write("") }
 
 func (c *memClip) Write(s string) error {
 	c.mu.Lock()
@@ -37,7 +33,11 @@ func (c *memClip) Write(s string) error {
 	return nil
 }
 
-func (c *memClip) get() string { t, _ := c.Read(); return t }
+func (c *memClip) get() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.text
+}
 
 func detailView(t *testing.T, data map[string]any) (*SecretsView, *memClip, *clip.Clipboard) {
 	t.Helper()
@@ -74,16 +74,11 @@ func run(t *testing.T, v *SecretsView, cmd tea.Cmd) {
 	if cmd == nil {
 		t.Fatal("nil command")
 	}
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
+	m, ok := cmd().(copyMsg)
 	if !ok {
-		t.Fatalf("expected batch, got %T", msg)
+		t.Fatal("command must yield copyMsg")
 	}
-	if m, ok := batch[0]().(copyMsg); ok {
-		v.Update(m)
-	} else {
-		t.Fatal("first command must yield copyMsg")
-	}
+	v.Update(m)
 }
 
 func TestDataKeysAreSorted(t *testing.T) {
@@ -200,28 +195,41 @@ func TestCopyErrorIsSurfaced(t *testing.T) {
 	}
 }
 
-func TestSecondCommandWipesClipboard(t *testing.T) {
+func TestCopyThenDelayedWipe(t *testing.T) {
 	v, mc, _ := detailView(t, map[string]any{"a": "one"})
-	cmd := press(v, "y")
-	batch := cmd().(tea.BatchMsg)
-	batch[0]()
+	msg := press(v, "y")().(copyMsg)
 	if mc.get() != "one" {
 		t.Fatalf("clipboard = %q", mc.get())
 	}
-	batch[1]()
+	_, wipe := v.Update(msg)
+	if wipe == nil {
+		t.Fatal("no wipe scheduled after copy")
+	}
+	wipe()
 	if mc.get() != "" {
 		t.Fatalf("clipboard not wiped after delay: %q", mc.get())
 	}
 }
 
-func TestDelayedWipeSparesForeignContent(t *testing.T) {
-	v, mc, _ := detailView(t, map[string]any{"a": "one"})
-	batch := press(v, "y")().(tea.BatchMsg)
-	batch[0]()
-	_ = mc.Write("user text")
-	batch[1]()
-	if mc.get() != "user text" {
-		t.Fatalf("clipboard = %q", mc.get())
+func TestFailedCopySchedulesNoWipe(t *testing.T) {
+	v, _, _ := detailView(t, map[string]any{"a": "one"})
+	_, wipe := v.Update(copyMsg{key: "a", err: errors.New("boom")})
+	if wipe != nil {
+		t.Fatal("wipe scheduled although copy failed")
+	}
+}
+
+func TestStaleWipeSparesNewerCopy(t *testing.T) {
+	v, mc, cb := detailView(t, map[string]any{"a": "one"})
+	cb.SetDelay(20 * time.Millisecond)
+	_, first := v.Update(press(v, "y")().(copyMsg))
+	done := make(chan struct{})
+	go func() { first(); close(done) }()
+	time.Sleep(5 * time.Millisecond)
+	_ = cb.Copy("newer") // supersedes the first timer
+	<-done
+	if mc.get() != "newer" {
+		t.Fatalf("stale timer wiped newer copy: %q", mc.get())
 	}
 }
 

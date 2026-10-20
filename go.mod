@@ -3,23 +3,23 @@ module github.com/diablo02000/vault-tui
 go 1.26.9
 
 require (
-	github.com/atotto/clipboard v0.1.4
+	github.com/aymanbagabas/go-osc52/v2 v2.0.1
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/charmbracelet/x/term v0.2.2
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/urfave/cli/v3 v3.10.0
 )
 
 require (
-	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
-	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
